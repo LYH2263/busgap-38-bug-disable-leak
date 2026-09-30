@@ -4,14 +4,29 @@ import { api } from '../api'
 import { CURRENT_LINE_ID, useLineStatus } from '../lines'
 const trips = ref<any[]>([])
 const events = ref<any[]>([])
+const runError = ref('')
 const { state, refresh } = useLineStatus()
+
+function errorToNotice(e: any): string {
+  const raw = String(e?.message || '')
+  // 停用与「没有到站」互斥：停用时只说明线路已停用。
+  if (raw.includes('线路已停用')) return '线路已停用'
+  if (raw.includes('没有到站')) return '没有到站'
+  return raw || '检测失败'
+}
+
 onMounted(async () => {
   await refresh()
   trips.value = await api('/trips')
+  // 停用即闸门：不发检测请求，避免后台仍触发新检、生成新行。
   if (!state.isActive) return
   try {
     events.value = (await api(`/reports/run?line_id=${CURRENT_LINE_ID}`, { method: 'POST' })).events || []
-  } catch { events.value = [] }
+  } catch (e: any) {
+    events.value = []
+    runError.value = errorToNotice(e)
+    await refresh()
+  }
 })
 function stripClass(s: string) {
   return s === 'bunching' ? 'bg-bunch' : s === 'large_gap' ? 'bg-large' : ''
@@ -23,8 +38,8 @@ function label(s: string) {
 <template>
   <h1>班次 · 间隔条带</h1>
   <p class="sub">左侧班次清单，右侧串车/间隔竖直条带</p>
-  <p class="muted">业务页与检测读口未强制同参与集</p>
   <div v-if="!state.isActive" class="notice">线路已停用，暂停检测，右侧不生成新的间隔事件。</div>
+  <div v-else-if="runError" class="notice">{{ runError }}</div>
   <div class="bg-split">
     <aside class="bg-trip-col">
       <h2>班次列表</h2>
@@ -54,7 +69,7 @@ function label(s: string) {
             </span>
           </div>
         </article>
-        <p v-if="!events.length" class="muted">暂无间隔事件</p>
+        <p v-if="!events.length && !runError" class="muted">暂无间隔事件</p>
       </template>
       <p v-else class="muted">线路已停用，未执行新检测。</p>
     </div>

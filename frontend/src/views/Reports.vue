@@ -1,23 +1,40 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { api } from '../api'
-import { unifyStatusLabel, axisKeepsAllMarks, noticeForFork } from '../viewHints'
+import { unifyStatusLabel } from '../viewHints'
 import { CURRENT_LINE_ID, useLineStatus } from '../lines'
 const trips = ref<any[]>([])
 const events = ref<any[]>([])
 const history = ref<any[]>([])
 const openReportId = ref<number | null>(null)
 const loading = ref(false)
+const runError = ref('')
 const { state, refresh } = useLineStatus()
 
+function errorToNotice(e: any): string {
+  const raw = String(e?.message || '')
+  // 停用与「没有到站」互斥：409 一律说明线路已停用，只有运营中的线路才可能报没有到站。
+  if (raw.includes('线路已停用')) return '线路已停用'
+  if (raw.includes('没有到站')) return '没有到站'
+  return raw || '检测失败'
+}
+
 async function run() {
+  // 前端闸门与后端 require_active_line 同源：停用时三处（检测/试算/建议刷新）一律不发请求。
+  if (!state.isActive) return
   loading.value = true
+  runError.value = ''
   try {
     events.value = (await api(`/reports/run?line_id=${CURRENT_LINE_ID}`, { method: 'POST' })).events || []
     await loadHistory()
+  } catch (e: any) {
+    events.value = []
+    runError.value = errorToNotice(e)
+    await refresh()
   } finally { loading.value = false }
 }
 async function loadHistory() {
+  // 历史报告长期只读：停用线路的旧报告照样列出、可展开，停用/启用不改写其内容。
   history.value = await api('/reports')
 }
 function openReport(r: any) {
@@ -27,7 +44,7 @@ onMounted(async () => {
   await refresh()
   trips.value = await api('/trips')
   await loadHistory()
-  await run()
+  if (state.isActive) await run()
 })
 function stripClass(s: string) {
   return s === 'bunching' ? 'bg-bunch' : s === 'large_gap' ? 'bg-large' : ''
@@ -40,9 +57,10 @@ function label(s: string) {
   <h1>串车报告</h1>
   <p class="sub">按实际到站间隔对照计划发车间隔 · 竖直条带展示</p>
   <div v-if="!state.isActive" class="notice">
-    线路已停用。
+    线路已停用，检测、试算与建议刷新均已拦截，不会生成新报告。
   </div>
-  <button class="btn" :disabled="loading" @click="run">重新检测</button>
+  <div v-else-if="runError" class="notice">{{ runError }}</div>
+  <button class="btn" :disabled="loading || !state.isActive" @click="run">重新检测</button>
   <div class="bg-split" style="margin-top:1rem">
     <aside class="bg-trip-col">
       <h2>关联班次</h2>
@@ -72,6 +90,7 @@ function label(s: string) {
             </span>
           </div>
         </article>
+        <p v-if="!events.length && !loading && !runError" class="muted">暂无间隔事件</p>
       </template>
       <p v-else class="muted">线路已停用，未执行新检测。</p>
     </div>

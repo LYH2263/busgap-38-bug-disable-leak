@@ -2,7 +2,8 @@ import { reactive } from 'vue'
 import { api } from './api'
 
 // The app currently tracks a single line (seed B12, id = 1).
-// Centralize its active state so every view reacts to deactivate/activate.
+// Centralize its active state so every view reacts to deactivate/activate:
+// 检测、试算、建议刷新、发车间隔轴必须同时被拦、同时恢复。
 export const CURRENT_LINE_ID = 1
 
 interface LineState {

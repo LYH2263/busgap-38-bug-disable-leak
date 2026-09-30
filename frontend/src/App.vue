@@ -2,18 +2,20 @@
 import { onMounted, ref } from 'vue'
 import { RouterLink, RouterView } from 'vue-router'
 import { api } from './api'
-import { CURRENT_LINE_ID } from './lines'
+import { CURRENT_LINE_ID, useLineStatus } from './lines'
 
 const marks = ref<any[]>([])
 const stopName = ref('')
-const isActive = ref(true)
+// 轴上的停用提示与检测/试算/建议同源：闸门未落下（未停用）时不得先装成停用。
+const { state, refresh } = useLineStatus()
 
 onMounted(async () => {
+  await refresh()
+  // 时间轴为只读数据：停用期间仍可打开，仅展示历史到站，不触发任何新检测。
   try {
     const data = await api(`/reports/timeline?line_id=${CURRENT_LINE_ID}`)
     marks.value = data.marks || []
     stopName.value = data.stop_name || ''
-    isActive.value = data.is_active !== false
   } catch {
     marks.value = []
   }
@@ -25,7 +27,7 @@ onMounted(async () => {
       <div class="bg-headway-meta">
         <span class="bg-brand">BusGap · 串车检测</span>
         <span class="bg-stop">发车间隔轴 · {{ stopName || '主站' }}</span>
-        <span v-if="!isActive" class="badge badge-warn">线路已停用</span>
+        <span v-if="!state.isActive" class="badge badge-warn">线路已停用</span>
       </div>
       <div class="bg-rail">
         <div class="bg-rail-ticks">
