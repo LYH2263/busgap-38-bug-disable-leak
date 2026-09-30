@@ -1,33 +1,47 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { api } from '../api'
-import { unifyStatusLabel, axisKeepsAllMarks, noticeForFork } from '../viewHints'
+import { api, ApiError } from '../api'
+import { unifyStatusLabel } from '../viewHints'
 import { CURRENT_LINE_ID, useLineStatus } from '../lines'
 const trips = ref<any[]>([])
 const events = ref<any[]>([])
 const history = ref<any[]>([])
 const openReportId = ref<number | null>(null)
 const loading = ref(false)
-const { state, refresh } = useLineStatus()
+const notice = ref('')
+const { state, refresh, ensureReady } = useLineStatus()
+
+async function loadHistory() {
+  // 历史报告只读：停用期间整栏仍在、可展开，且不会被新检测改写。
+  history.value = await api('/reports')
+}
 
 async function run() {
+  if (!state.isActive) return
   loading.value = true
+  notice.value = ''
   try {
     events.value = (await api(`/reports/run?line_id=${CURRENT_LINE_ID}`, { method: 'POST' })).events || []
     await loadHistory()
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409) {
+      // 与后端闸门对齐：停用与「没有到站」互斥，只显示线路已停用。
+      notice.value = '线路已停用，未执行新检测。'
+      state.isActive = false
+      events.value = []
+    } else if (e instanceof ApiError && e.status === 404) {
+      notice.value = e.message || '没有到站'
+    } else {
+      throw e
+    }
   } finally { loading.value = false }
 }
-async function loadHistory() {
-  history.value = await api('/reports')
-}
-function openReport(r: any) {
-  openReportId.value = openReportId.value === r.id ? null : r.id
-}
+
 onMounted(async () => {
-  await refresh()
+  await ensureReady()
   trips.value = await api('/trips')
   await loadHistory()
-  await run()
+  if (state.isActive) await run()
 })
 function stripClass(s: string) {
   return s === 'bunching' ? 'bg-bunch' : s === 'large_gap' ? 'bg-large' : ''
@@ -40,9 +54,10 @@ function label(s: string) {
   <h1>串车报告</h1>
   <p class="sub">按实际到站间隔对照计划发车间隔 · 竖直条带展示</p>
   <div v-if="!state.isActive" class="notice">
-    线路已停用。
+    线路已停用，检测已拦截，历史报告仍可只读查看。
   </div>
-  <button class="btn" :disabled="loading" @click="run">重新检测</button>
+  <div v-else-if="notice" class="notice">{{ notice }}</div>
+  <button v-if="state.isActive" class="btn" :disabled="loading" @click="run">重新检测</button>
   <div class="bg-split" style="margin-top:1rem">
     <aside class="bg-trip-col">
       <h2>关联班次</h2>
@@ -84,7 +99,7 @@ function label(s: string) {
         <strong>#{{ r.id }}</strong>
         <span class="muted" style="margin-left:0.5rem">线路 {{ r.line_id }} · 站点 {{ r.stop_name }} · {{ r.created_at }}</span>
       </div>
-      <button class="btn-ghost" @click="openReport(r)">{{ openReportId === r.id ? '收起' : '查看' }}</button>
+      <button class="btn-ghost" @click="openReportId = openReportId === r.id ? null : r.id">{{ openReportId === r.id ? '收起' : '查看' }}</button>
     </div>
     <div v-if="openReportId === r.id" class="bg-strip-col" style="margin-top:0.7rem;min-height:auto">
       <article

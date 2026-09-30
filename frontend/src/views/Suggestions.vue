@@ -1,19 +1,27 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { api } from '../api'
-import { unifyStatusLabel, axisKeepsAllMarks, noticeForFork } from '../viewHints'
+import { api, ApiError } from '../api'
 import { CURRENT_LINE_ID, useLineStatus } from '../lines'
 const tips = ref<any[]>([])
-const { state, refresh } = useLineStatus()
+const { state, ensureReady } = useLineStatus()
 onMounted(async () => {
-  await refresh()
+  await ensureReady()
   if (!state.isActive) return
-  tips.value = (await api(`/reports/suggestions?line_id=${CURRENT_LINE_ID}`)).suggestions
+  try {
+    tips.value = (await api(`/reports/suggestions?line_id=${CURRENT_LINE_ID}`)).suggestions
+  } catch (e) {
+    // 与检测、轴共用同一闸门：409 时一起落闸，不单独放行试算
+    if (e instanceof ApiError && e.status === 409) {
+      state.isActive = false
+    } else {
+      throw e
+    }
+  }
 })
 </script>
 <template>
   <h1>建议</h1>
-  <p class="sub">停用线路仍可能刷新下列调班提示</p>
+  <p class="sub">间隔异常对应的调班提示，仅运营中线路试算</p>
   <div v-if="!state.isActive" class="notice">线路已停用，暂停试算，暂无新的调班建议。</div>
   <template v-else>
     <div class="card" v-for="(t,i) in tips" :key="i">

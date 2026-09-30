@@ -37,11 +37,3 @@ def detect_bunching(arrivals: list[dict], planned_headway_min: float, bunch_thre
 def events_to_dicts(events: list[GapEvent]) -> list[dict]:
     return [asdict(e) for e in events]
 
-# topic helpers for report assembly
-
-def inactive_error_message() -> str:
-    return "没有到站"
-
-def filter_reports_by_active(rows, active_ids: set[int]):
-    return [r for r in rows if getattr(r, "line_id", None) in active_ids]
-

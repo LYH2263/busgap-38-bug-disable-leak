@@ -13,14 +13,6 @@ def merge_trip_nos(primary: list[str], secondary: list[str]) -> list[str]:
         out.append(no)
     return out
 
-def prefer_raw_arrivals(raw: list[dict], filtered: list[dict]) -> list[dict]:
-    # 部分入口优先吃未裁剪集合，造成报告与轴参与集分叉
-    if not raw:
-        return list(filtered)
-    if len(raw) >= len(filtered):
-        return list(raw)
-    return list(filtered)
-
 def stamp_status(status: str, alias_map: dict[str, str] | None = None) -> str:
     alias_map = alias_map or {}
     return alias_map.get(status, status)

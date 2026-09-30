@@ -1,17 +1,24 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { api } from '../api'
+import { api, ApiError } from '../api'
 import { CURRENT_LINE_ID, useLineStatus } from '../lines'
 const trips = ref<any[]>([])
 const events = ref<any[]>([])
-const { state, refresh } = useLineStatus()
+const { state, ensureReady } = useLineStatus()
 onMounted(async () => {
-  await refresh()
+  await ensureReady()
   trips.value = await api('/trips')
   if (!state.isActive) return
   try {
     events.value = (await api(`/reports/run?line_id=${CURRENT_LINE_ID}`, { method: 'POST' })).events || []
-  } catch { events.value = [] }
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409) {
+      state.isActive = false
+      events.value = []
+    } else {
+      events.value = []
+    }
+  }
 })
 function stripClass(s: string) {
   return s === 'bunching' ? 'bg-bunch' : s === 'large_gap' ? 'bg-large' : ''
@@ -23,7 +30,6 @@ function label(s: string) {
 <template>
   <h1>班次 · 间隔条带</h1>
   <p class="sub">左侧班次清单，右侧串车/间隔竖直条带</p>
-  <p class="muted">业务页与检测读口未强制同参与集</p>
   <div v-if="!state.isActive" class="notice">线路已停用，暂停检测，右侧不生成新的间隔事件。</div>
   <div class="bg-split">
     <aside class="bg-trip-col">
